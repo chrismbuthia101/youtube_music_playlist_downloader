@@ -76,8 +76,41 @@ class UrlTests(unittest.TestCase):
         )
         self.assertEqual(
             ympd.normalize_playlist_url(f"music.youtube.com/playlist?list={PLAYLIST_ID}"),
-            f"https://music.youtube.com/playlist?list={PLAYLIST_ID}",
+            PLAYLIST_URL,
         )
+
+    def test_watch_url_with_playlist_is_normalized(self):
+        watch_url = f"https://www.youtube.com/watch?v={VIDEO_ID}&list={PLAYLIST_ID}&index=2"
+        self.assertEqual(ympd.get_playlist_id(watch_url), PLAYLIST_ID)
+        self.assertEqual(ympd.normalize_playlist_url(watch_url), PLAYLIST_URL)
+
+    def test_get_playlist_info_uses_canonical_url(self):
+        config = ympd.setup_config({})
+        config["url"] = f"https://www.youtube.com/watch?v={VIDEO_ID}&list={PLAYLIST_ID}"
+
+        class FakeYoutubeDL:
+            instances = []
+
+            def __init__(self, options):
+                self.options = options
+                self.extracted_url = None
+                FakeYoutubeDL.instances.append(self)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def extract_info(self, url, download=False):
+                self.extracted_url = url
+                return {"_type": "playlist", "title": "Playlist", "entries": []}
+
+        with unittest.mock.patch.object(ympd, "YoutubeDL", FakeYoutubeDL):
+            info = ympd.get_playlist_info(config)
+
+        self.assertEqual(info["title"], "Playlist")
+        self.assertEqual(FakeYoutubeDL.instances[0].extracted_url, PLAYLIST_URL)
 
     def test_invalid_playlist_urls(self):
         with self.assertRaises(ValueError):
@@ -206,6 +239,11 @@ class ConfigTests(TempDirectoryTestCase):
             config = ympd.setup_config({"audio_codec": " MP3 "})
         self.assertEqual(config["audio_codec"], "mp3")
         self.assertNotIn("Only MP3 files are supported", output.getvalue())
+
+    def test_setup_config_normalizes_playlist_url(self):
+        watch_url = f"https://www.youtube.com/watch?v={VIDEO_ID}&list={PLAYLIST_ID}"
+        config = ympd.setup_config({"url": watch_url})
+        self.assertEqual(config["url"], PLAYLIST_URL)
 
     def test_override_config_is_minimal(self):
         source = {
