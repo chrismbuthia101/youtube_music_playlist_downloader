@@ -177,6 +177,7 @@ def get_common_ytdl_opts(config: dict, quiet: bool = True):
     }
 
 def get_playlist_info(config: dict):
+    url = normalize_playlist_url(config["url"])
     ytdl_opts = {
         **get_common_ytdl_opts(config),
         "dump_single_json": True,
@@ -184,12 +185,12 @@ def get_playlist_info(config: dict):
         "playlistreverse": config["reverse_playlist"],
     }
     with YoutubeDL(ytdl_opts) as ytdl:
-        info_dict = ytdl.extract_info(config["url"], download=False)
+        info_dict = ytdl.extract_info(url, download=False)
 
     if not info_dict:
-        raise Exception(f"Unable to retrieve playlist information for '{config['url']}'")
+        raise Exception(f"Unable to retrieve playlist information for '{url}'")
     if info_dict.get("entries") is None:
-        raise Exception("The provided URL does not point to a playlist")
+        raise Exception(f"The provided URL does not point to a playlist: '{url}'")
     return info_dict
 
 def normalize_playlist_url(url):
@@ -210,9 +211,10 @@ def normalize_playlist_url(url):
     if not parsed.netloc:
         raise ValueError(f"Invalid playlist URL: '{url}'")
 
-    # Raises with a helpful message when the "list" parameter is missing
-    get_playlist_id(url)
-    return url
+    # Always return a canonical playlist URL. Watch URLs with a "list" parameter
+    # would otherwise be extracted as a single video by yt-dlp.
+    playlist_id = get_playlist_id(url)
+    return f"https://www.youtube.com/playlist?list={playlist_id}"
 
 def convert_image_type(image, image_type):
     with BytesIO() as f:
@@ -1024,6 +1026,8 @@ def setup_config(config: dict):
     if new_config["audio_codec"] != "mp3":
         print("[WARNING] Only MP3 files are supported for playlist tracking and metadata. "
               f"Audio codec '{new_config['audio_codec']}' may prevent files from being recognized on future updates.")
+    if new_config["url"]:
+        new_config["url"] = normalize_playlist_url(new_config["url"])
 
     # Create example song config override
     config_copy = copy.deepcopy(new_config)
